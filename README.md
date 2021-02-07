@@ -1,1 +1,1 @@
-# s90z-nlsy97
+# sociol-90z-spring-2021
