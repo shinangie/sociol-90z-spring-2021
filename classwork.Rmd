@@ -2,14 +2,14 @@
 output: html_document
 ---
 
-```{r}
+```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 rm(list = ls())
 library(tidyverse)
 library(haven)
 
 # read in NLSY97 data
-nlsy97 <- read_dta("nlsy97_canvas/nlsy97.dta") %>%
+nlsy97 <- read_dta("nlsy97/nlsy97.dta") %>%
   rename_all(str_to_lower)
 
 # extract variable labels
@@ -17,12 +17,43 @@ nlsy97_varlabels <- nlsy97 %>%
   map(~ attr(.x, "label")) %>% 
   enframe() %>%
   transmute(name, label = str_to_lower(value))
+
+x <- nlsy97 %>% 
+  # select id, sex, race, age, ed, earning vars, sampling weight
+  select(id = pubid_1997, 
+         sex = sex_1997, 
+         race = race_1997, 
+         age = cv_age_int_date_1997, 
+         ed = cv_highest_degree_ever_edt_2017, 
+         earn_ws = yinc_1700_2017, 
+         earn_fb = yinc_2100_2017,
+         sweight = sampling_panel_weight_1997) %>% 
+  # recode na and decode else
+  mutate(sex = ifelse(sex == 1, "Male", "Female"),
+         age = age + 20,
+         race = case_when(race == 1 ~ "White",
+                          race == 2 ~ "Black or African American",
+                          race == 3 ~ "American Indian, Eskimo, or Aleut",
+                          race == 4 ~ "Asian or Pacific Islander",
+                          race == 5 ~ "Other"),
+         ed = case_when(ed == 0 ~ "None",
+                        ed == 1 ~ "GED",
+                        ed == 2 ~ "High school diploma",
+                        ed == 3 ~ "AA",
+                        ed == 4 ~ "BA, BS",
+                        ed == 5 ~ "MA, MS",
+                        ed == 6 ~ "PhD",
+                        ed == 7 ~ "DDS, JD, MD"),
+         earn_ws = ifelse(earn_ws %in% c(-1, -2, -3, -4, -5), NA, earn_ws),
+         earn_fb = ifelse(earn_fb %in% c(-1, -2, -3, -4, -5), NA, earn_fb))
+
+# -1 ~ "Refusal"
+# -2 ~ "Don't Know"
+# -3 ~ "Invalid Skip"
+# -4 ~ "Valid Skip"
+# -5 ~ "Non-interview"
 ```
 
 ```{r}
-
-```
-
-```{r}
-
+summary(x)
 ```
