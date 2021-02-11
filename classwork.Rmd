@@ -21,7 +21,7 @@ nlsy97_varlabels <- nlsy97 %>%
 x <- nlsy97 %>% 
   # select id, sex, race, age, ed, earning vars, sampling weight
   select(id = pubid_1997, 
-         sex = sex_1997, 
+         gender = sex_1997, 
          race = race_1997, 
          age = cv_age_int_date_1997, 
          ed = cv_highest_degree_ever_edt_2017, 
@@ -29,7 +29,7 @@ x <- nlsy97 %>%
          earn_fb = yinc_2100_2017,
          sweight = sampling_panel_weight_1997) %>% 
   # recode na and decode else
-  mutate(sex = ifelse(sex == 1, "Male", "Female"),
+  mutate(gender = factor(gender, levels = 1:2, labels = c("Male", "Female")),
          age = age + 20,
          race = case_when(race == 1 ~ "White",
                           race == 2 ~ "Black or African American",
@@ -38,14 +38,20 @@ x <- nlsy97 %>%
                           race == 5 ~ "Other"),
          ed = case_when(ed == 0 ~ "None",
                         ed == 1 ~ "GED",
-                        ed == 2 ~ "High school diploma",
+                        ed == 2 ~ "HS",
                         ed == 3 ~ "AA",
-                        ed == 4 ~ "BA, BS",
-                        ed == 5 ~ "MA, MS",
+                        ed == 4 ~ "BA or BS",
+                        ed == 5 ~ "MA or MS",
                         ed == 6 ~ "PhD",
-                        ed == 7 ~ "DDS, JD, MD"),
+                        ed == 7 ~ "DDS, JD, or MD"),
+         ed = factor(ed, levels = c("None", "GED", "HS", "AA", "BA or BS", 
+                                    "MA or MS", "PhD", "DDS, JD, or MD")),
          earn_ws = ifelse(earn_ws %in% c(-1, -2, -3, -4, -5), NA, earn_ws),
-         earn_fb = ifelse(earn_fb %in% c(-1, -2, -3, -4, -5), NA, earn_fb))
+         earn_fb = ifelse(earn_fb %in% c(-1, -2, -3, -4, -5), NA, earn_fb),
+         earnings = case_when(
+           is.na(earn_ws) == FALSE & is.na(earn_fb) == FALSE ~ earn_ws + earn_fb,
+           is.na(earn_ws) == TRUE & is.na(earn_fb) == FALSE ~ earn_fb,
+           is.na(earn_ws) == FALSE & is.na(earn_fb) == TRUE ~ earn_ws))
 
 # -1 ~ "Refusal"
 # -2 ~ "Don't Know"
