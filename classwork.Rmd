@@ -2,11 +2,13 @@
 output: html_document
 ---
 
-```{r, include=FALSE}
+```{r cleaning, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 rm(list = ls())
 library(tidyverse)
 library(haven)
+library(Hmisc)
+library(tidymodels)
 
 # read in NLSY97 data
 nlsy97 <- read_dta("nlsy97/nlsy97.dta") %>%
@@ -18,7 +20,7 @@ nlsy97_varlabels <- nlsy97 %>%
   enframe() %>%
   transmute(name, label = str_to_lower(value))
 
-x <- nlsy97 %>% 
+feb18 <- nlsy97 %>% 
   # select id, sex, race, age, ed, earning vars, sampling weight
   select(id = pubid_1997, 
          gender = sex_1997, 
@@ -29,7 +31,8 @@ x <- nlsy97 %>%
          earn_fb = yinc_2100_2017,
          sweight = sampling_panel_weight_1997) %>% 
   # recode na and decode else
-  mutate(gender = factor(gender, levels = 1:2, labels = c("Male", "Female")),
+  mutate(gender = factor(gender, levels = 1:2, 
+                         labels = c("Male", "Female")),
          age = age + 20,
          race = case_when(race == 1 ~ "White",
                           race == 2 ~ "Black or African American",
@@ -49,9 +52,69 @@ x <- nlsy97 %>%
          earn_ws = ifelse(earn_ws %in% c(-1, -2, -3, -4, -5), NA, earn_ws),
          earn_fb = ifelse(earn_fb %in% c(-1, -2, -3, -4, -5), NA, earn_fb),
          earnings = case_when(
-           is.na(earn_ws) == FALSE & is.na(earn_fb) == FALSE ~ earn_ws + earn_fb,
+           is.na(earn_ws) == FALSE & is.na(earn_fb) == FALSE ~ sum(earn_ws, earn_fb),
            is.na(earn_ws) == TRUE & is.na(earn_fb) == FALSE ~ earn_fb,
-           is.na(earn_ws) == FALSE & is.na(earn_fb) == TRUE ~ earn_ws))
+           is.na(earn_ws) == FALSE & is.na(earn_fb) == TRUE ~ earn_ws)) %>% 
+  drop_na(ed, earnings)
+
+feb22 <- nlsy97 %>% 
+  # select id, sex, race, age, parental income, test score, sampling weight
+  select(id = pubid_1997, 
+         gender = sex_1997, 
+         race = race_ethnicity_1997, 
+         age = cv_age_int_date_1997, 
+         pinc = cv_income_gross_yr_1997, 
+         ts = asvab_math_verbal_score_pct_1999,
+         sweight = sampling_panel_weight_1997) %>% 
+  # mutate_at(vars(gender, race, pinc, ts),
+  #           ~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>% 
+  # recode na and decode else
+  mutate(gender = factor(gender, levels = 1:2, 
+                         labels = c("Male", "Female")),
+         # female = as.double(gender == 2),
+         # male = as.double(gender == 1),
+         age = age + 20,
+         race = case_when(race == 1 ~ "Black",
+                          race == 2 ~ "Hispanic/Latinx",
+                          race %in% c(3, 4) ~ "Other"),
+         race = factor(race, levels = 1:3, 
+                       labels = c("Other", "Black", "Hispanic/Latinx")),
+         pinc = wtd.rank(x = pinc, weights = sweight, normwt = T),
+         pinc = 100*pinc/max(pinc),
+         ts = ts/1000) %>% 
+  drop_na(pinc, ts)
+
+mar11 <- nlsy97 %>% 
+  select(id = pubid_1997,
+         pinc = cv_income_gross_yr_1997,
+         ts = asvab_math_verbal_score_pct_1999,
+         ed = cv_highest_degree_ever_edt_2017,
+         yinc_ws = yinc_1700_2017, 
+         yinc_fb = yinc_2100_2017,
+         sweight = sampling_panel_weight_1997) %>% 
+  mutate_at(vars(pinc, ts, ed),
+            ~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>%
+  mutate(pinc = 100 * wtd.rank(x = pinc, weights = sweight, normwt = T)/sum(!is.na(pinc)),
+         ts = ts/1000,
+         ed = case_when(ed == 0 ~ "None",
+                        ed == 1 ~ "GED",
+                        ed == 2 ~ "HS",
+                        ed == 3 ~ "AA",
+                        ed == 4 ~ "BA or BS",
+                        ed == 5 ~ "MA or MS",
+                        ed == 6 ~ "PhD",
+                        ed == 7 ~ "DDS, JD, or MD"),
+         ed = factor(ed, levels = c("None", "GED", "HS", "AA", "BA or BS", 
+                                    "MA or MS", "PhD", "DDS, JD, or MD")),
+         yinc_ws = ifelse(yinc_ws %in% c(-1, -2, -3, -4, -5), NA, yinc_ws),
+         yinc_fb = ifelse(yinc_fb %in% c(-1, -2, -3, -4, -5), NA, yinc_fb),
+         cinc = case_when(
+           is.na(yinc_ws) == FALSE & is.na(yinc_fb) == FALSE ~ sum(yinc_ws, yinc_fb),
+           is.na(yinc_ws) == TRUE & is.na(yinc_fb) == FALSE ~ yinc_fb,
+           is.na(yinc_ws) == FALSE & is.na(yinc_fb) == TRUE ~ yinc_ws),
+         cinc = 100 * wtd.rank(x = cinc, weights = sweight, normwt = T)/sum(!is.na(cinc))) %>% 
+  select(-starts_with("yinc")) %>% 
+  drop_na(cinc)
 
 # -1 ~ "Refusal"
 # -2 ~ "Don't Know"
@@ -60,6 +123,34 @@ x <- nlsy97 %>%
 # -5 ~ "Non-interview"
 ```
 
+```{r feb18}
+feb18medians <- feb18 %>% 
+  group_by(gender, ed) %>% 
+  summarise(median_earnings = wtd.quantile(earnings, sweight, 0.5))
+
+feb18medians %>% 
+  ggplot(aes(ed, median_earnings, fill = gender)) +
+  geom_col(position = "dodge")
+```
+
+```{r feb22}
+lm(ts ~ pinc, data = feb22)
+
+feb22 %>% 
+  ggplot(aes(pinc, ts)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F)
+```
+1.  child earnings rank  ̃ parental income rank
+2.  child earnings rank  ̃ parental income rank + educational attainment
+3.  child earnings rank  ̃ parental income rank + educational attainment + parental incomerank * educational attainment
+4.  child earnings rank  ̃ parental income rank + test score
+5.  child earnings rank  ̃ parental income rank + test score + educational attainment
+
 ```{r}
-summary(x)
+mod1 <- lm(cinc ~ pinc, data = mar11) # gamma + alpha*beta
+mod2 <- lm(cinc ~ pinc + ed, data = mar11) # gamma + beta
+mod3 <- lm(cinc ~ pinc + ed + pinc*ed, data = mar11) # gamma + beta + alpha
+mod4 <- lm(cinc ~ pinc + ts, data = mar11)
+mod5 <- lm(cinc ~ pinc + ts + ed, data = mar11)
 ```
