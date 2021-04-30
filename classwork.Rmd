@@ -9,6 +9,7 @@ library(tidyverse)
 library(haven)
 library(Hmisc)
 library(tidymodels)
+library(broom)
 
 # read in NLSY97 data
 nlsy97 <- read_dta("nlsy97/nlsy97.dta") %>%
@@ -141,16 +142,40 @@ feb22 %>%
   geom_point() +
   geom_smooth(method = "lm", se = F)
 ```
-1.  child earnings rank  ̃ parental income rank
-2.  child earnings rank  ̃ parental income rank + educational attainment
-3.  child earnings rank  ̃ parental income rank + educational attainment + parental incomerank * educational attainment
-4.  child earnings rank  ̃ parental income rank + test score
-5.  child earnings rank  ̃ parental income rank + test score + educational attainment
 
-```{r}
+```{r mar11, warning=F}
 mod1 <- lm(cinc ~ pinc, data = mar11) # gamma + alpha*beta
 mod2 <- lm(cinc ~ pinc + ed, data = mar11) # gamma + beta
 mod3 <- lm(cinc ~ pinc + ed + pinc*ed, data = mar11) # gamma + beta + alpha
 mod4 <- lm(cinc ~ pinc + ts, data = mar11)
 mod5 <- lm(cinc ~ pinc + ts + ed, data = mar11)
+```
+
+```{r mar 18}
+mod2fit <- augment(mod2, se_fit = TRUE)
+
+ggplot(mod2fit, aes(x = pinc, y = .fitted)) +
+  geom_line(aes(color = ed)) +
+  geom_ribbon(aes(ymin = .fitted - 1.96*.se.fit,
+                  ymax = .fitted + 1.96*.se.fit,
+                  fill = ed, alpha = 0.3)) +
+  labs(x = "Parent Income Rank in 1997",
+       y = "Child Income Rank in 2017") +
+  scale_color_discrete("Education") +
+  scale_fill_discrete("Education")
+
+mod3fit <- augment(mod3, se_fit = TRUE)
+
+ggplot(mod3fit, aes(x = pinc, y = .fitted)) +
+  geom_line(aes(color = ed)) +
+  geom_ribbon(aes(ymin = .fitted - 1.96*.se.fit,
+                  ymax = .fitted + 1.96*.se.fit,
+                  fill = ed, alpha = 0.3)) +
+  labs(x = "Parent Income Rank in 1997",
+       y = "Child Income Rank in 2017") +
+  scale_color_discrete("Education") +
+  scale_fill_discrete("Education")
+```
+
+```{r apr 1}
 ```

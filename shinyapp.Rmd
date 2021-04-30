@@ -1,0 +1,91 @@
+---
+title: "shinyapp"
+author: "Angie Shin"
+date: "4/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+library(ggforce)
+library(tidyverse)
+library(shinydashboard)
+library(stargazer)
+library(haven)
+library(Hmisc)
+library(tidymodels)
+library(broom)
+library(janitor)
+library(readxl)
+
+nlsy97 <- read_dta("nlsy97/nlsy97.dta") %>%
+  clean_names() %>% 
+  select(id = pubid_1997, 
+         gender = sex_1997, 
+         race = race_1997, 
+         age = cv_age_int_date_1997, 
+         ed = cv_highest_degree_ever_edt_2017, 
+         starts_with("cv_hgc"),
+         starts_with("cv_college_type"),
+         yinc_ws = yinc_1700_2017, 
+         yinc_fb = yinc_2100_2017,
+         pinc = cv_income_gross_yr_1997, 
+         starts_with("cv_hh_size"),
+         ts = asvab_math_verbal_score_pct_1999,
+         sweight = sampling_panel_weight_1997) %>% 
+  mutate_at(vars(gender, 
+                 race, 
+                 ed,
+                 starts_with("cv_hgc_ever_edt"),
+                 starts_with("cv_college_type"),
+                 pinc, 
+                 starts_with("yinc"),
+                 starts_with("cv_hh_size"), 
+                 ts),
+            ~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>%
+  mutate(gender = factor(gender, levels = 1:2, 
+                         labels = c("Male", "Female")),
+         age = age + 20,
+         race = case_when(race == 1 ~ "White",
+                          race == 2 ~ "Black or African American",
+                          race == 3 ~ "American Indian, Eskimo, or Aleut",
+                          race == 4 ~ "Asian or Pacific Islander",
+                          race == 5 ~ "Other"),
+         ed = case_when(ed == 0 ~ "None",
+                        ed == 2 ~ "HS",
+                        ed == 3 ~ "AA",
+                        ed == 4 ~ "BA or BS",
+                        TRUE ~ NA),
+         yinc_ws = ifelse(yinc_ws %in% c(-1, -2, -3, -4, -5), NA, yinc_ws),
+         yinc_fb = ifelse(yinc_fb %in% c(-1, -2, -3, -4, -5), NA, yinc_fb),
+         cinc = case_when(
+           is.na(yinc_ws) == FALSE & is.na(yinc_fb) == FALSE ~ sum(yinc_ws, yinc_fb),
+           is.na(yinc_ws) == TRUE & is.na(yinc_fb) == FALSE ~ yinc_fb,
+           is.na(yinc_ws) == FALSE & is.na(yinc_fb) == TRUE ~ yinc_ws),
+         cinc = 100 * wtd.rank(x = cinc, weights = sweight, normwt = T)/sum(!is.na(cinc)),
+         pinc = wtd.rank(x = pinc, weights = sweight, normwt = T),
+         pinc = 100*pinc/max(pinc),
+         ts = ts/1000) %>% 
+  unite("ctype", cv_college_type_01_1997:cv_college_type_06_2017, na.rm = T)
+
+# caaspp <- read.delim("cadash/caaspp.txt", 
+#                      header = TRUE, sep = ",", dec = ".") %>% 
+#   clean_names()
+# 
+# caaspp_codes <- read.delim("cadash/subgroups.txt",
+#                            header = TRUE, sep = ",", dec = ".") %>% 
+#   clean_names() %>% 
+#   select(id = demographic_id,
+#          )
+# 
+# cgr <- read.delim("final/college.txt",
+#                   header = TRUE, sep = " ", dec = ".")
+# 
+# frpm <- read_excel("final/frpm.xls") %>% 
+#   row_to_names(row_number = 1)
+```
+
+```{r}
+
+```
