@@ -1,0 +1,58 @@
+---
+title: "Sociol 90z Final Project"
+subtitle: "Research Lab: Inequality"
+author: "Angie Shin"
+date: "5/7/2021"
+output: pdf_document
+---
+
+```{r setup, include = F}
+knitr::opts_chunk$set(echo = T)
+library(tidyverse)
+library(haven)
+library(Hmisc)
+library(tidymodels)
+library(broom)
+
+final <- read_csv("final.csv") %>% 
+  select(id = R0000100,
+         wgt = R1236201,
+         parents = R0532200, # filter for both biological parents
+         gender = R0536300,
+         race = R0538700,
+         origin = R1201300, 
+         ed = U1990700,
+         edy = U1990100,
+         edf = R1302400,
+         edm = R1302500,
+         povertyratio = R1204900,
+         pinc = R1204900) %>% 
+  filter(parents == 1,
+         edy != 95,
+         edf != 95,
+         edm != 95) %>% 
+  mutate_all(~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>%
+  mutate(gender = factor(gender, levels = 1:2, 
+                         labels = c("Male", "Female")),
+         race = case_when(race == 1 ~ "White",
+                          race == 2 ~ "Black or African American",
+                          race == 3 ~ "American Indian, Eskimo, or Aleut",
+                          race == 4 ~ "Asian or Pacific Islander",
+                          race == 5 ~ "Other"),
+         origin = case_when(origin == 1 ~ "US",
+                            origin == 2 ~ "Not US"),
+         ed = case_when(ed == 0 ~ "None",
+                        ed == 1 ~ "GED",
+                        ed == 2 ~ "HS",
+                        ed == 3 ~ "AA",
+                        ed == 4 ~ "BA or BS",
+                        ed == 5 ~ "MA or MS",
+                        ed == 6 ~ "PhD",
+                        ed == 7 ~ "DDS, JD, or MD"),
+         pinc_rank = 100 * wtd.rank(x = pinc, 
+                                    weights = wgt, 
+                                    normwt = T)/sum(!is.na(pinc)),
+         povertyratio = povertyratio/100) %>% 
+  select(-parents) %>% 
+  drop_na(ed, edf, edm, pinc)
+```

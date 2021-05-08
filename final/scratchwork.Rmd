@@ -1,0 +1,126 @@
+---
+title: "Sociol 90z Final Project"
+subtitle: "Research Lab: Inequality"
+author: "Angie Shin"
+date: "5/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pROC)
+library(glmnet)
+library(estimatr)
+library(infer)
+library(ggforce)
+library(tidyverse)
+library(shinydashboard)
+library(stargazer)
+library(haven)
+library(Hmisc)
+library(tidymodels)
+library(broom)
+library(janitor)
+library(readxl)
+library(rpart.plot)
+
+nlsy97 <- read_dta("nlsy97/nlsy97.dta") %>%
+  clean_names() %>% 
+  select(id = pubid_1997, 
+         gender = sex_1997, 
+         race = race_1997, 
+         ed = cv_highest_degree_ever_edt_2017,
+         pinc = cv_income_gross_yr_1997,
+         ts = asvab_math_verbal_score_pct_1999,
+         res = cv_urban_rural_1997,
+         sweight = sampling_panel_weight_1997) %>% 
+  mutate_at(vars(gender, race, ed, pinc, ts, res),
+            ~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>%
+  mutate(gender = factor(gender, levels = 1:2, 
+                         labels = c("Male", "Female")),
+         race = case_when(race == 1 ~ "White",
+                          race == 2 ~ "Black or African American",
+                          race == 3 ~ "American Indian, Eskimo, or Aleut",
+                          race == 4 ~ "Asian or Pacific Islander",
+                          race == 5 ~ "Other"),
+         ed = case_when(ed == 0 ~ "None",
+                        ed == 1 ~ "GED",
+                        ed == 2 ~ "HS",
+                        ed == 3 ~ "AA",
+                        ed == 4 ~ "BA or BS",
+                        ed == 5 ~ "MA or MS",
+                        ed == 6 ~ "PhD",
+                        ed == 7 ~ "DDS, JD, or MD"),
+         college = ifelse(ed %in% c("BA or BS", "MA or MS", 
+                                    "PhD", "DDS, JD, or MD"), 1, 0),
+         ts = ts/1000) %>% 
+  drop_na()
+
+set.seed(02138)
+n_train <- floor(nrow(nlsy97) * 0.75)
+n_test <- nrow(nlsy97) - n_train 
+nlsy97_split <- sample(c(rep(TRUE, n_train), rep(FALSE, n_test)))
+train_id <- nlsy97[nlsy97_split == TRUE, "id"]
+test_id <- nlsy97[nlsy97_split == FALSE,"id"]
+```
+
+intro
+literature review: 3-6 sources
+research question: ts, pinc, race, gender -> college, pub v. priv
+analytical strategy
+data and variables
+results and conclusion
+
+```{r class}
+model <- lm(data = nlsy97, college ~ ts + pinc + race + gender)
+
+fit <- augment(model, se_fit = TRUE)
+
+ggplot(fit, aes(x = college, y = .fitted)) +
+  geom_line(aes(color = ed)) +
+  geom_ribbon(aes(ymin = .fitted - 1.96*.se.fit,
+                  ymax = .fitted + 1.96*.se.fit,
+                  fill = ed, alpha = 0.3)) +
+  labs(x = "Parent Income Rank in 1997",
+       y = "Child Income Rank in 2017") +
+  scale_color_discrete("Education") +
+  scale_fill_discrete("Education")
+```
+
+```{r gov1005}
+logistic_mod <- logistic_reg() %>%
+  set_engine("glm") 
+
+logistic_fit <- fit(logistic_mod,
+                    factor(college) ~ ts + pinc + race + gender,
+                    data = nlsy97)
+logistic_fit %>%
+  tidy(conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high)
+
+tree_mod <- decision_tree() %>%
+  set_engine("rpart",
+             model = TRUE) %>%
+  set_mode("classification")
+
+house_region_tree <- fit(tree_mod,
+                         factor(college) ~ ts + pinc + race + gender,
+                         data = nlsy97)
+
+house_region_tree$fit %>%
+  prp(extra = 6, varlen = 0, faclen = 0)
+
+forest_mod <- rand_forest() %>%
+  set_engine("randomForest") %>%
+  set_mode("classification")
+
+house_forest <- fit(forest_mod,
+                    factor(college) ~ ts + pinc + race + gender,
+                    data = nlsy97)
+
+tibble(error = house_forest$fit$err.rate[, "OOB"],
+       trees = 1:500) %>%
+  ggplot(aes(x = trees, y = error)) +
+  geom_line() +
+  theme_classic()
+```

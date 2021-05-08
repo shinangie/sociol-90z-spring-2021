@@ -176,6 +176,3 @@ ggplot(mod3fit, aes(x = pinc, y = .fitted)) +
   scale_color_discrete("Education") +
   scale_fill_discrete("Education")
 ```
-
-```{r apr 1}
-```
