@@ -6,53 +6,249 @@ date: "5/7/2021"
 output: pdf_document
 ---
 
-```{r setup, include = F}
+# Introduction
+
+Background and research question
+
+# Context
+
+Literature review
+
+# Analysis
+
+The National Longitudinal Surveys (NLS), sponsored by the U.S. Bureau of Labor Statistics, are nationally representative surveys that follow the same sample of individuals from specific birth cohorts over time on tens of thousands of different variables. The National Longitudinal Survey of Youth in 1997 (NLSY97) Cohort is a longitudinal project that follows the lives of a sample of American youth born between 1980-84; 8,984 respondents were ages 12-17 when first interviewed in 1997. This ongoing cohort has been surveyed 18 times to date—originally surveyed annually until 2011, and now interviewed biennially. The most recent facilitation of the NLSY took place in 2017.
+
+```{r setup, include = T, echo = T}
 knitr::opts_chunk$set(echo = T)
-library(tidyverse)
+library(pROC)
+library(glmnet)
+library(estimatr)
+library(infer)
+library(ggforce)
+library(shinydashboard)
+library(stargazer)
 library(haven)
 library(Hmisc)
 library(tidymodels)
 library(broom)
+library(mice)
+library(margins)
+library(janitor)
+library(readxl)
+library(rpart.plot)
+library(tidyverse)
 
-final <- read_csv("final.csv") %>% 
+final <- read_csv("final.csv",
+                  # to avoid the cols specification warning message
+                  col_types = cols(
+  R0000100 = col_double(),
+  R0532200 = col_double(),
+  R0536300 = col_double(),
+  R0538600 = col_double(),
+  R0538700 = col_double(),
+  R1201300 = col_double(),
+  R1204500 = col_double(),
+  R1204900 = col_double(),
+  R1236201 = col_double(),
+  R1302400 = col_double(),
+  R1302500 = col_double(),
+  U1990100 = col_double(),
+  U1990700 = col_double()
+)) %>% 
+  # finalize variable selection
   select(id = R0000100,
          wgt = R1236201,
          parents = R0532200, # filter for both biological parents
          gender = R0536300,
          race = R0538700,
          origin = R1201300, 
-         ed = U1990700,
-         edy = U1990100,
-         edf = R1302400,
-         edm = R1302500,
-         povertyratio = R1204900,
-         pinc = R1204900) %>% 
-  filter(parents == 1,
-         edy != 95,
+         ed = U1990700, # highest degree attained
+         edy = U1990100, # highest grade of school completed
+         edf = R1302400, # biological father's highest grade of school completed
+         edm = R1302500, # biological mother's highest grade of school completed
+         pr = R1204900, # ratio of pinc to poverty level
+         pinc = R1204500,
+         hisp = R0538600) %>% 
+  # add some parameters
+  filter(parents == 1, ## there are non biological parent versions of edf and edm, so this will only include households with both biological parents
+         edy != 95, ## 95 == school experiences were ungraded in the codebook
          edf != 95,
          edm != 95) %>% 
+  # recode for survey-wide non-response procedures
   mutate_all(~ ifelse(.x %in% c(-1, -2, -3, -4, -5), NA, .x)) %>%
-  mutate(gender = factor(gender, levels = 1:2, 
-                         labels = c("Male", "Female")),
+  mutate(gender = ifelse(gender == "Male", 0, 1), # binarify gender
+         white = ifelse(race == 1, 1, 0),
+         black = ifelse(race == 2, 1, 0),
+         indig = ifelse(race == 3, 1, 0),
+         aapi = ifelse(race == 4, 1, 0),
          race = case_when(race == 1 ~ "White",
                           race == 2 ~ "Black or African American",
                           race == 3 ~ "American Indian, Eskimo, or Aleut",
                           race == 4 ~ "Asian or Pacific Islander",
-                          race == 5 ~ "Other"),
-         origin = case_when(origin == 1 ~ "US",
-                            origin == 2 ~ "Not US"),
-         ed = case_when(ed == 0 ~ "None",
-                        ed == 1 ~ "GED",
-                        ed == 2 ~ "HS",
-                        ed == 3 ~ "AA",
-                        ed == 4 ~ "BA or BS",
-                        ed == 5 ~ "MA or MS",
-                        ed == 6 ~ "PhD",
-                        ed == 7 ~ "DDS, JD, or MD"),
+                          hisp == 1 ~ "Hispanic"),
+         race = ifelse(is.na(race), "Other", race),
+         origin = case_when(origin == 1 ~ 0,
+                            origin == 2 ~ 1), # country of birth; originally a citizenship question based on country of birth
+         edy = case_when(ed == 0 & is.na(edy) ~ 0,
+                         ed %in% c(1, 2) & is.na(edy) ~ 12,
+                         ed == 3 & is.na(edy) ~ 14,
+                         ed == 4 & is.na(edy) ~ 16,
+                         ed == 5 & is.na(edy) ~ 18,
+                         ed %in% c(6, 7) & is.na(edy) ~ 20,
+                         TRUE ~ edy),
+         ed = factor(ed, levels = 0:7,
+                     labels = c("None", 
+                                "GED", 
+                                "HS", 
+                                "AA",
+                                "BA or BS", 
+                                "MA or MS", 
+                                "PhD",
+                                "DDS, JD, or MD")),
+         college = ifelse(edy >= 16, 1, 0),
          pinc_rank = 100 * wtd.rank(x = pinc, 
                                     weights = wgt, 
-                                    normwt = T)/sum(!is.na(pinc)),
-         povertyratio = povertyratio/100) %>% 
-  select(-parents) %>% 
-  drop_na(ed, edf, edm, pinc)
+                                    normwt = T)/sum(!is.na(pinc)), # code from classwork
+         pr = pr/100,
+         pr_group = as.integer(substr(pr, 1, 1)) + 1) %>% 
+  select(-parents) %>% # no longer needed now that filter and edf/edm are properly configured
+  drop_na(origin, ed, edf, edm, pinc, pr) # needed for modeling
 ```
+
+```{r eda}
+glimpse(final)
+
+summary(final$edf)
+summary(final$edm)
+
+summary(final$pinc)
+summary(final$pinc_rank)
+
+summary(final$pr)
+
+summary(complete(mice(final, m = 1)))
+```
+
+```{r linear mod}
+# set formula
+fm <- college ~ edf + edm + pinc + race + pr
+
+# set linear model
+linear_mod <- lm(fm, 
+                 data = final)
+
+linear_fit <- augment(linear_mod, 
+                      se_fit = TRUE,
+                      type.predict = "response")
+
+# plot
+linear_fit %>% 
+  filter(college < 1,
+         race %in% c("White", "Black or African American"),
+         pr < 16) %>% 
+  ggplot(aes(x = pr, 
+             y = .fitted)) +
+  geom_point(aes(color = race)) +
+  geom_smooth(method = "lm", 
+              se = F, 
+              color = "black") +
+  scale_x_continuous("Household Income to Poverty Line Ratio") +
+  scale_y_continuous("Probability of Completing BA") +
+  theme(legend.position = "none") +
+  facet_wrap(~ race)
+```
+
+```{r logit mod}
+# set logit model
+logit_mod <- glm(fm, family = binomial("logit"), data = final)
+
+tidy(logit_mod)
+
+# one unit increase in X is associated with a beta unit change in log(p/(1-p))
+# average marginal effect (AME): average effect in the prob scale
+
+margins_summary(logit_mod)
+
+logit_fit <- augment(logit_mod, se_fit = TRUE, 
+                     type.predict = "response")
+```
+
+```{r logistic mod}
+# set factored formula
+ffm <- factor(college) ~ edf + edm + pinc + race + pr
+
+# set logistic model
+logistic_mod <- logistic_reg() %>%
+  set_engine("glm") 
+
+logistic_fit <- fit(logistic_mod, 
+                    ffm, 
+                    data = final)
+
+logistic_fit %>%
+  tidy(conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high)
+
+final %>% 
+  group_by(pr_group) %>%
+  summarise(pct_success = sum(college)/n()) %>% 
+  mutate(emp_logit = qlogis(pct_success)) %>% 
+  ggplot(aes(pr_group, emp_logit)) +
+  geom_point() +
+  geom_smooth(method = lm) +
+  theme_classic() +
+  labs(
+    x = "Poverty Ratio Group",
+    y = "Empirical logits")
+```
+
+```{r decision mods}
+# set tree model
+tree_mod <- decision_tree() %>%
+  set_engine("rpart",
+             model = TRUE) %>%
+  set_mode("classification")
+
+house_region_tree <- fit(tree_mod, ffm, data = final)
+
+house_region_tree$fit %>%
+  prp(extra = 6, varlen = 0, faclen = 0)
+
+# set forest model
+forest_mod <- rand_forest() %>%
+  set_engine("randomForest") %>%
+  set_mode("classification")
+
+house_forest <- fit(forest_mod, ffm, data = final)
+
+tibble(error = house_forest$fit$err.rate[, "OOB"],
+       trees = 1:500) %>%
+  ggplot(aes(x = trees, y = error)) +
+  geom_line() +
+  theme_classic()
+```
+
+# Results
+
+
+
+# References
+
+From the course:
+
+Bailey, M.J. and Dynarski, S.M., 2011. Gains and gaps: Changing inequality in US college entry and completion (No.w17633). National Bureau of Economic Research.
+
+Duncan, O.D., 1968. Inheritance of race or inheritance of poverty?. On understanding poverty, pp.85-110.
+
+Reardon, S.F., 2011. The widening academic achievement gap between the rich and the poor: New evidence and possible explanations. Whither opportunity, pp.91-116.
+
+==
+
+From individual search:
+
+Assari, S. (2018). Parental education better helps white than black families escape poverty: National survey of Children’s health. Economies, 6(2). http://dx.doi.org.ezp-prod1.hul.harvard.edu/10.3390/economies6020030.
+
+Brown, P. & James, D. (2019). Educational expansion, poverty reduction and social mobility: Reframing the debate. International Journal of Educational Research,
+100. https://doi.org/10.1016/j.ijer.2020.101537.
+
+Mannon, S. E. (2018). Misery Loves Company: Poverty, Mobility, and Higher Education in the Post-welfare State. Sociological Perspectives, 61(2), 276–294. https://doi.org/10.1177/0731121418756043.
