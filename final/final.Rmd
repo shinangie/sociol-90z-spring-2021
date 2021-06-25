@@ -8,15 +8,17 @@ output: pdf_document
 
 # Introduction
 
-Background and research question
+The National Longitudinal Surveys (NLS), sponsored by the U.S. Bureau of Labor Statistics, are nationally representative surveys that follow the same sample of individuals from specific birth cohorts over time on tens of thousands of different variables. The National Longitudinal Survey of Youth in 1997 (NLSY97) Cohort is a longitudinal project that follows the lives of a sample of American youth born between 1980-84; 8,984 respondents were ages 12-17 when first interviewed in 1997. This ongoing cohort has been surveyed 18 times to date—originally surveyed annually until 2011, and now interviewed biennially. The most recent facilitation of the NLSY took place in 2017. For this project, I will be exploring 2,096 filtered observations of variables such as race, parent education background, and parent income and poverty level to determine whether or not they affect individuals finishing college. 
 
-# Context
+# Literature Review
 
-Literature review
+The paper "Parental Education Better Helps White than Black Families Escape Poverty: National Survey of Children’s Health" by Shervin Assari investigates racial variation in the effects of highest education of parents on family’s ability to scale poverty, defined as the household’s income-to-needs ratio using a nationally representative sample of American families with children. Contextualized with how systemic racism encompasses residential segregation, low quality of education, low paying jobs, discrimination in the labor market, and extra costs of upward social mobility for minorities such that POC families face more challenges for leveraging their education to escape poverty, the paper hypothesizes that consequently, higher education of parents in the household was associated with lower risk of poverty. Race, however, interacted with parental education attainment on household-income-to-needs ratio, indicating smaller effects for Black compared to White families. Lower number of parents and higher number of children in Black families did not explain such racial disparities. The economic gain of parental education on helping family escape poverty is smaller for Black than White families, and this is not as a result of a lower parent-to-child ratio in Black households. Assari also includes recommendations that policies should specifically address structural barriers in the lives of all minorities to minimize the diminished return of SES resources across racial minority groups, enhance quality of education and reduce the extra cost of upward social mobility for racial minorities, and employ multilevel action plans to avoid difficulties with eliminating the existing economic gap between racial groups.
 
-# Analysis
+The working paper "The Great Escape: Intergenerational Mobility in the United States Since 1940" by Nathaniel Hilger develops a method to estimate intergenerational mobility in education on large cross-sectional surveys and apply the method to U.S. census data with an institutional focus. The method overcomes the problem that most children cannot be linked to parents by ages of school completion, and thereby allows for estimation of final educational outcomes by parental income and education. The new methodology in conjunction with multiple additional datasets yields several important new historical facts. Findings included that educational intergenerational mobility increased significantly after 1940 (1911-14 birth cohorts) before stabilizing and then declining after 1980 (1951-54 birth cohorts), post-1940 educational intergenerational mobility gains plausibly increased aggregate annual earnings growth by 0.25 percentage points over the 1940-70 period, and such gains were particularly large in the South for both whites and blacks, implying larger  gains for blacks nationally due to their greater geographic concentration in the South. Hilger contextualizes these results with the increase in relative educational intergenerational mobility after 1940 stemming from greater high school enrollment, rather than college enrollment, invalidating the GI Bills, the Civil Rights Movement, school desegregation, the black high school movement, and the Great Migration as accounted for in such gains. In particular, Hilger notes some discrepancies between the working paper and the paper "Is the United States Still a Land of Opportunity? Recent Trends in Intergenerational Mobility" by Chetty et al. in 2014, in that for income-based intergenerational mobility across places in the 2000s education correlated with black population shares, income inequality, and educational quality, even conditional on state and year fixed effects; however, unlike Chetty et al., Hilger found a robust positive association of state income levels with education, which he attributes to the much larger forces of modernization accompanying economic growth after 1940, particularly in the South where lower-SES voters gained political power and K-12 public school input gaps narrowed dramatically. 
 
-The National Longitudinal Surveys (NLS), sponsored by the U.S. Bureau of Labor Statistics, are nationally representative surveys that follow the same sample of individuals from specific birth cohorts over time on tens of thousands of different variables. The National Longitudinal Survey of Youth in 1997 (NLSY97) Cohort is a longitudinal project that follows the lives of a sample of American youth born between 1980-84; 8,984 respondents were ages 12-17 when first interviewed in 1997. This ongoing cohort has been surveyed 18 times to date—originally surveyed annually until 2011, and now interviewed biennially. The most recent facilitation of the NLSY took place in 2017.
+Other readings were already reviewed in class.
+
+# Method
 
 ```{r setup, include = T, echo = T}
 knitr::opts_chunk$set(echo = T)
@@ -115,6 +117,8 @@ final <- read_csv("final.csv",
   drop_na(origin, ed, edf, edm, pinc, pr) # needed for modeling
 ```
 
+# Analysis
+
 ```{r eda}
 glimpse(final)
 
@@ -136,10 +140,13 @@ fm <- college ~ edf + edm + pinc + race + pr
 # set linear model
 linear_mod <- lm(fm, 
                  data = final)
+linear_mod
 
+# set linear fit
 linear_fit <- augment(linear_mod, 
                       se_fit = TRUE,
                       type.predict = "response")
+linear_fit
 
 # plot
 linear_fit %>% 
@@ -150,9 +157,23 @@ linear_fit %>%
              y = .fitted)) +
   geom_point(aes(color = race)) +
   geom_smooth(method = "lm", 
-              se = F, 
               color = "black") +
   scale_x_continuous("Household Income to Poverty Line Ratio") +
+  scale_y_continuous("Probability of Completing BA") +
+  theme(legend.position = "none") +
+  facet_wrap(~ race)
+
+# plot
+linear_fit %>% 
+  filter(college < 1,
+         race %in% c("White", "Black or African American"),
+         pr < 16) %>% 
+  ggplot(aes(x = log(pr), 
+             y = .fitted)) +
+  geom_point(aes(color = race)) +
+  geom_smooth(method = "lm", 
+              color = "black") +
+  scale_x_continuous("Log of Household Income to Poverty Line Ratio") +
   scale_y_continuous("Probability of Completing BA") +
   theme(legend.position = "none") +
   facet_wrap(~ race)
@@ -184,6 +205,7 @@ logistic_mod <- logistic_reg() %>%
 logistic_fit <- fit(logistic_mod, 
                     ffm, 
                     data = final)
+logistic_fit
 
 logistic_fit %>%
   tidy(conf.int = TRUE) %>%
@@ -209,8 +231,10 @@ tree_mod <- decision_tree() %>%
              model = TRUE) %>%
   set_mode("classification")
 
+# set tree fit
 house_region_tree <- fit(tree_mod, ffm, data = final)
 
+# plot
 house_region_tree$fit %>%
   prp(extra = 6, varlen = 0, faclen = 0)
 
@@ -219,8 +243,10 @@ forest_mod <- rand_forest() %>%
   set_engine("randomForest") %>%
   set_mode("classification")
 
+# set forest fit
 house_forest <- fit(forest_mod, ffm, data = final)
 
+# plot
 tibble(error = house_forest$fit$err.rate[, "OOB"],
        trees = 1:500) %>%
   ggplot(aes(x = trees, y = error)) +
@@ -230,25 +256,20 @@ tibble(error = house_forest$fit$err.rate[, "OOB"],
 
 # Results
 
+Ultimately, the filtered data utilized for this research question yielded two consistent variables for being correlated to college graduation: the education backgrounds of biological mothers and fathers of individuals. Across linear, log linear, logit, logistic regression, and decision tree and randomForest models, the education backgrounds of biological mothers and fathers consistently produced confidence intervals that indicate statistical significance. Surprisingly, race, parent income, and poverty group did not get incorporated into the models above as impactful enough factors. I attribute this to two limitations: (1) needing a more complex model that can accurately gauge the exact relationship these three variables have on college completion, such as a confounding scenario in which the education backgrounds of the individuals' parents also depend on race, parent income and poverty group (one posit is that the lower the parent income and poverty group is for the individual, the more likely the parents themselves were also in that bracket when achieving their highest grade of schooling measurable by the NLSY97); and (2) constraints found in the dataset itself, with over 75% of its survey respondents being white. This is bolstered by the log linear relationship plotted above in the first code chunk, in which the Black proportion of the data (the second largest racial demographic after white respondents) has a significantly smaller slope for its regression line than that of the white respondents. Another unusual observation is the tertiary decision tier for the randomForest plot, in which they add parent income as a significant threshold; as a caveat, the error margin for this tree model does plateau at around 0.33.
 
+# Conclusion
+
+The relationship between college completion and parent background may be too cloudy of a question for American data, as college degrees are becoming more and more normalized and data on parent background becomes more and more clustered in coverage towards survey methodology that favors white respondents. For future study, college entrance among immigrant people of color may be a more specific research question to tackle, with more nuanced covariates to observe such as whether gentrification in residential areas affect high school entrance, how secondary schooling is funded such that different resources terrace individuals into different likelihoods of college entrance, how clear distinctions of college type can get beyond the aggregated college degree type, and how resources and their accessibility outside of high school preparation for college affects college entrance.
 
 # References
 
-From the course:
+Assari, S. (2018). Parental education better helps white than black families escape poverty: National survey of Children’s health. Economies, 6(2).
 
-Bailey, M.J. and Dynarski, S.M., 2011. Gains and gaps: Changing inequality in US college entry and completion (No.w17633). National Bureau of Economic Research.
+Bailey, M.J. and Dynarski, S.M. (2011). Gains and gaps: Changing inequality in US college entry and completion, No.17633. National Bureau of Economic Research.
 
-Duncan, O.D., 1968. Inheritance of race or inheritance of poverty?. On understanding poverty, pp.85-110.
+Duncan, O.D. (1968). Inheritance of race or inheritance of poverty?. On understanding poverty, pp.85-110.
 
-Reardon, S.F., 2011. The widening academic achievement gap between the rich and the poor: New evidence and possible explanations. Whither opportunity, pp.91-116.
+Hilger, N. (2015). The Great Escape: Intergenerational Mobility in the United States Since 1940, No.21217. National Bureau of Economic Research.
 
-==
-
-From individual search:
-
-Assari, S. (2018). Parental education better helps white than black families escape poverty: National survey of Children’s health. Economies, 6(2). http://dx.doi.org.ezp-prod1.hul.harvard.edu/10.3390/economies6020030.
-
-Brown, P. & James, D. (2019). Educational expansion, poverty reduction and social mobility: Reframing the debate. International Journal of Educational Research,
-100. https://doi.org/10.1016/j.ijer.2020.101537.
-
-Mannon, S. E. (2018). Misery Loves Company: Poverty, Mobility, and Higher Education in the Post-welfare State. Sociological Perspectives, 61(2), 276–294. https://doi.org/10.1177/0731121418756043.
+Reardon, S.F. (2011). The widening academic achievement gap between the rich and the poor: New evidence and possible explanations. Whither opportunity, pp.91-116.
